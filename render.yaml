@@ -1,0 +1,5 @@
+services:
+  - type: web
+    name: alerta-calendario
+    runtime: docker
+    plan: free
