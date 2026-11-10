@@ -379,8 +379,23 @@ INDEX_HTML = r"""<!doctype html>
 
   arm.onclick = async function () {
     try { ctx = ctx || new (window.AudioContext || window.webkitAudioContext)(); await ctx.resume(); } catch (e) {}
-    var started = await startServices();
-    if (!started) return;
+    var started = false;
+    try {
+      var r = await fetch('/api/start?k=' + encodeURIComponent(K), { cache: 'no-store' });
+      var d = await r.json();
+      if (r.status === 403) {
+        meta.textContent = 'Acceso denegado: clave incorrecta';
+        return;
+      }
+      started = !!(d && (d.status === 'started' || d.status === 'running'));
+      if (d && d.status === 'error') {
+        meta.textContent = 'Servicio ya activo o no pudo arrancarse';
+      } else {
+        meta.textContent = 'Servicios activos · vigilando adviento/advent/calendario...';
+      }
+    } catch (e) {
+      meta.textContent = 'No se pudo iniciar el servicio';
+    }
     armed = true;
     this.textContent = '✨ Alertas activas y protegiendo';
     this.className = 'on';
@@ -545,6 +560,18 @@ INDEX_HTML = r"""<!doctype html>
     if (armed) startAlarm();
   }
 
+  async function autoStartIfNeeded() {
+    try {
+      var r = await fetch('/api/start?k=' + encodeURIComponent(K), { cache: 'no-store' });
+      var d = await r.json();
+      if (r.status !== 403 && d && (d.status === 'started' || d.status === 'running')) {
+        armed = true;
+        document.getElementById('arm').textContent = '✨ Alertas activas y protegiendo';
+        document.getElementById('arm').className = 'on';
+      }
+    } catch (e) {}
+  }
+
   async function poll() {
     try {
       var r = await fetch('/api/status?k=' + encodeURIComponent(K), { cache: 'no-store' });
@@ -555,6 +582,7 @@ INDEX_HTML = r"""<!doctype html>
       meta.textContent = 'Reconectando con el servidor...';
     }
   }
+  autoStartIfNeeded();
   poll(); setInterval(poll, 10000);
 })();
 </script>
