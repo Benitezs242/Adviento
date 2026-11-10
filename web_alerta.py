@@ -287,9 +287,10 @@ INDEX_HTML = r"""<!doctype html>
   </header>
 
   <button id="arm">🔔 Activar alertas (toca una vez)</button>
+  <button id="probe" class="secondary">🔎 Comprobar producto real</button>
   <button id="stop">🔕 Silenciar alarma</button>
 
-  <div class="state wait" id="state">Analizando tienda<small>Comprobando disponibilidad del producto...</small></div>
+  <div class="state wait" id="state">Buscando adviento/advent/calendario<small>Monitoreando la tienda en busca del objetivo principal...</small></div>
   
   <a class="cta" id="cta" hidden target="_blank" rel="noopener"></a>
   <div class="err" id="err" hidden></div>
@@ -310,6 +311,7 @@ INDEX_HTML = r"""<!doctype html>
   var K = new URLSearchParams(location.search).get('k') || '';
   var lastId = null, armed = false, ctx = null, beepTimer = null, wake = null, prevAvail = null;
   var $ = function (id) { return document.getElementById(id); };
+  var meta = $('meta'), state = $('state'), err = $('err'), cta = $('cta'), items = $('items'), events = $('events'), storelink = $('storelink');
 
   function safeUrl(u) { return /^https?:\/\//i.test(u || '') ? u : null; }
 
@@ -360,11 +362,11 @@ INDEX_HTML = r"""<!doctype html>
         return false;
       }
       if (d && d.status === 'started') {
-        meta.textContent = 'Servicios iniciados · comprobando tienda...';
+        meta.textContent = 'Servicios iniciados · vigilando adviento/advent/calendario...';
         return true;
       }
       if (d && d.status === 'running') {
-        meta.textContent = 'Servicios ya activos · comprobando tienda...';
+        meta.textContent = 'Servicios ya activos · vigilando adviento/advent/calendario...';
         return true;
       }
       meta.textContent = d && d.message ? d.message : 'Servicios en espera';
@@ -387,6 +389,56 @@ INDEX_HTML = r"""<!doctype html>
     requestWake();
   };
 
+  var DEFAULT_SEARCH = 'adviento,advent,calendario';
+
+  probe.onclick = async function () {
+    var product = 'Serum Crecimiento De Pestañas Trendy 4,5g';
+    meta.textContent = 'Comprobando producto real en la tienda...';
+    try {
+      var r = await fetch('/api/probe?product=' + encodeURIComponent(product), { cache: 'no-store' });
+      var d = await r.json();
+      if (d && d.status === 'ok' && d.matches && d.matches.length) {
+        state.className = 'state ok';
+        state.firstChild.nodeValue = '✅ Producto encontrado';
+        state.querySelector('small').textContent = d.matches[0].title + ' · ' + (d.matches[0].available ? 'Disponible' : 'Sin stock');
+        meta.textContent = 'Producto encontrado en la tienda real';
+        items.innerHTML = '';
+        d.matches.forEach(function (item) {
+          var row = document.createElement('div');
+          row.className = 'item';
+          var a = document.createElement('a');
+          a.href = item.url || d.store;
+          a.target = '_blank';
+          a.rel = 'noopener';
+          a.textContent = item.title;
+          var tag = document.createElement('span');
+          tag.className = 'tag ' + (item.available ? 'y' : 'n');
+          tag.textContent = item.available ? 'Disponible' : 'Sin stock';
+          row.appendChild(a);
+          row.appendChild(tag);
+          items.appendChild(row);
+        });
+        events.innerHTML = '';
+        var ev = document.createElement('div');
+        ev.className = 'ev';
+        ev.innerHTML = '<time>' + (d.checked_at || 'Ahora') + '</time>Prueba real del producto: ' + d.searched_for;
+        events.appendChild(ev);
+        return;
+      }
+      state.className = 'state wait';
+      state.firstChild.nodeValue = 'No aparece todavía';
+      state.querySelector('small').textContent = 'Se buscó "' + product + '" y la tienda no devolvió coincidencias.';
+      meta.textContent = 'No hubo coincidencia con ese producto';
+      items.innerHTML = '<div class="item">Sin coincidencias activas por ahora.</div>';
+    } catch (e) {
+      meta.textContent = 'No se pudo ejecutar la comprobación del producto';
+      state.className = 'state wait';
+      state.firstChild.nodeValue = 'Error de comprobación';
+      state.querySelector('small').textContent = 'La búsqueda no respondió correctamente.';
+      items.innerHTML = '<div class="item">Sin coincidencias activas por ahora.</div>';
+    }
+  };
+
   function notifyOS(text) {
     try {
       if ('Notification' in window && Notification.permission === 'granted') new Notification('🎄 Calendario de Adviento', { body: text });
@@ -397,15 +449,15 @@ INDEX_HTML = r"""<!doctype html>
     meta.textContent = (d.store || '') + ' · Última verificación: ' + (d.checked_at || '—');
     var avail = d.items.filter(function (i) { return i.available; });
     var st = state;
-    
+
     if (avail.length) {
       st.className = 'state ok';
-      st.firstChild.nodeValue = '¡PRODUCTO DISPONIBLE!';
+      st.firstChild.nodeValue = '¡OBJETIVO DETECTADO!';
       st.querySelector('small').textContent = avail.map(function (i) { return i.title; }).join(' · ');
     } else {
       st.className = 'state wait';
-      st.firstChild.nodeValue = 'Buscando lanzamiento...';
-      st.querySelector('small').textContent = d.items.length ? 'Se encontraron ' + d.items.length + ' productos relacionados, pero aún sin stock.' : 'Monitoreando la tienda en busca de novedades.';
+      st.firstChild.nodeValue = 'Buscando adviento/advent/calendario...';
+      st.querySelector('small').textContent = d.items.length ? 'Se encontraron ' + d.items.length + ' coincidencias, pero aún sin stock.' : 'Monitoreando la tienda en busca del objetivo principal.';
     }
 
     var cta = cta, main = avail.filter(function (i) { return /adviento|advent/i.test(i.title); })[0] || avail[0];
@@ -513,6 +565,101 @@ INDEX_HTML = r"""<!doctype html>
 _MONITOR_THREAD = None
 
 
+def probe_product(product_name):
+    """Busca un producto concreto para comprobar una detección real."""
+    product_name = (product_name or "").strip()
+    if not product_name:
+        return {"status": "error", "searched_for": "", "matches": [], "message": "Falta el nombre del producto."}
+
+    def normalize_text(value):
+        value = (value or "").lower()
+        value = value.replace("&", " ")
+        value = "".join(ch for ch in value if ch.isalnum() or ch.isspace() or ch in ",.-")
+        value = " ".join(value.split())
+        return value
+
+    try:
+        import monitor_adviento
+        previous_keywords = list(getattr(monitor_adviento, "KEYWORDS", []))
+        core_name = product_name
+        if "4,5g" in product_name.lower() or "4.5g" in product_name.lower():
+            core_name = product_name.replace("4,5g", "").replace("4.5g", "").strip()
+        if not core_name:
+            core_name = product_name
+
+        monitor_adviento.KEYWORDS = [normalize_text(core_name)]
+        matches = monitor_adviento.fetch_items()
+
+        normalized = []
+        for item in matches:
+            title = (item.get("title") or "").strip()
+            normalized.append(
+                {
+                    "id": item.get("id", ""),
+                    "title": title,
+                    "url": item.get("url", ""),
+                    "available": bool(item.get("available")),
+                    "price": item.get("price", "?"),
+                    "release": item.get("release", ""),
+                }
+            )
+
+        if not normalized:
+            store_url = getattr(monitor_adviento, "STORE_URL", "https://www.maquillajetrendyshop.com")
+            search_terms = [product_name, core_name]
+            for term in search_terms:
+                if not term:
+                    continue
+                query = urllib.parse.quote(term)
+                for url in [
+                    f"{store_url}/search?q={query}",
+                    f"{store_url}/search?type=product&q={query}",
+                ]:
+                    try:
+                        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                        with urllib.request.urlopen(req, timeout=25) as resp:
+                            html = resp.read().decode("utf-8", errors="replace")
+                        target = normalize_text(term)
+                        if target and target in normalize_text(html):
+                            normalized.append(
+                                {
+                                    "id": "search-result",
+                                    "title": term,
+                                    "url": url,
+                                    "available": True,
+                                    "price": "?",
+                                    "release": "",
+                                }
+                            )
+                            break
+                    except Exception:
+                        continue
+                if normalized:
+                    break
+
+        return {
+            "status": "ok" if normalized else "not_found",
+            "searched_for": product_name,
+            "store": getattr(monitor_adviento, "STORE_URL", "https://www.maquillajetrendyshop.com"),
+            "checked_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "matches": normalized,
+            "message": "Producto comprobado." if normalized else "No se encontró ese producto.",
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "searched_for": product_name,
+            "matches": [],
+            "message": str(exc),
+        }
+    finally:
+        try:
+            import monitor_adviento
+            monitor_adviento.KEYWORDS = previous_keywords
+        except Exception:
+            pass
+
+
 def run_monitor_loop():
     """Ejecuta el monitor en un hilo dentro del mismo proceso web."""
     try:
@@ -585,6 +732,15 @@ class WebHandler(BaseHTTPRequestHandler):
                 self.send_json({"status": "denied", "message": "Clave incorrecta"})
                 return
             self.send_json(build_status_payload())
+            return
+
+        if parsed.path == "/api/probe":
+            if ACCESS_KEY and urllib.parse.parse_qs(parsed.query).get("k", [""])[0] != ACCESS_KEY:
+                self.send_response(403)
+                self.send_json({"status": "denied", "message": "Clave incorrecta"})
+                return
+            product = urllib.parse.parse_qs(parsed.query).get("product", [""])[0]
+            self.send_json(probe_product(product))
             return
 
         self.send_response(200)

@@ -16,6 +16,12 @@ class TestWebAlerta(unittest.TestCase):
         self.assertIn("error", payload)
         self.assertIn("checked_at", payload)
 
+    def test_probe_product_returns_result(self):
+        result = web_alerta.probe_product("Serum Crecimiento De Pestanas Trendy 4,5g")
+        self.assertIn("searched_for", result)
+        self.assertIn("matches", result)
+        self.assertIn("status", result)
+
 
 if __name__ == "__main__":
     unittest.main()

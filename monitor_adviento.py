@@ -49,6 +49,8 @@ KEYWORDS = [
     for k in os.environ.get("KEYWORDS", "adviento,advent,calendario").split(",")
     if k.strip()
 ]
+if not KEYWORDS:
+    KEYWORDS = ["adviento", "advent", "calendario"]
 INTERVAL = max(120, int(os.environ.get("CHECK_EVERY_SECONDS", "300")))
 STATE_FILE = os.environ.get("STATE_FILE", os.path.join(HERE, "estado_adviento.json"))
 FAILS_BEFORE_ALERT = 6  # revisiones seguidas con error antes de avisar que la tienda no responde
