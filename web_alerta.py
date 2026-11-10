@@ -7,8 +7,7 @@ servir el estado a la página web.
 
 import json
 import os
-import subprocess
-import sys
+import threading
 import urllib.parse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -511,7 +510,16 @@ INDEX_HTML = r"""<!doctype html>
 </html>
 """
 
-_MONITOR_PROCESS = None
+_MONITOR_THREAD = None
+
+
+def run_monitor_loop():
+    """Ejecuta el monitor en un hilo dentro del mismo proceso web."""
+    try:
+        import monitor_adviento
+        monitor_adviento.run_forever()
+    except Exception as exc:  # pragma: no cover - fallback defensivo
+        print(f"Monitor en segundo plano falló: {exc}", flush=True)
 
 
 def build_status_payload():
@@ -541,19 +549,18 @@ def build_status_payload():
 
 
 def start_monitor_service():
-    """Lanza el monitor del calendario en segundo plano."""
-    global _MONITOR_PROCESS
-    if _MONITOR_PROCESS is not None and _MONITOR_PROCESS.poll() is None:
+    """Lanza el monitor del calendario en un hilo del mismo proceso."""
+    global _MONITOR_THREAD
+    if _MONITOR_THREAD is not None and _MONITOR_THREAD.is_alive():
         return {"status": "running", "message": "El servicio ya estaba activo."}
 
     try:
-        _MONITOR_PROCESS = subprocess.Popen(
-            [sys.executable, str(MONITOR_SCRIPT)],
-            cwd=str(HERE),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
+        _MONITOR_THREAD = threading.Thread(
+            target=run_monitor_loop,
+            name="alerta-monitor",
+            daemon=True,
         )
+        _MONITOR_THREAD.start()
         return {"status": "started", "message": "Servicios iniciados correctamente."}
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
